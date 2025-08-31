@@ -1,6 +1,6 @@
 # Multivariate Analysis Project
 
-This repository contains my coursework and projects for the **Multivariate Analysis** course, showcasing statistical techniques, data exploration, and dimensionality reduction methods.
+This repository contains the coursework and projects for the **Multivariate Analysis** course, showcasing statistical techniques, data exploration, and dimensionality reduction methods.
 
 ---
 
@@ -46,7 +46,7 @@ This repository contains my coursework and projects for the **Multivariate Analy
    Run scripts or open notebooks in each module folder (e.g. PCA/, Clustering/, LDA/)
 
 ## Purpose & Value
-This project reflects my ability to perform and communicate advanced statistical modeling, including:
+This project reflects the ability to perform and communicate advanced statistical modeling, including:
   - Summarizing high-dimensional data via dimensionality reduction
   - Identifying patterns and clusters in multivariate datasets
   - Applying classification methods and evaluating results
