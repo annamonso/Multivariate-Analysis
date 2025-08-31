@@ -1,0 +1,306 @@
+---
+title: 'Homework 1: Principal Component Analysis (PCA) and Multidimensional Scaling
+  (MDS)'
+author: 'Group 13 : Anna Monsó Rodríguez, Walter José Troiani Vargas, Joan Acero Pousa'
+date: "2024-10-07"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+0. Import the data set “euroleague_23_24.csv”: the player statistics of four teams taken part in Final Four of Euro League 2023-2024.
+```{r}
+
+rm(list=ls())
+euroleague_23_24 <- read.csv2("euroleague_23_24.csv")
+
+```
+
+1. Exploratory data analysis
+
+```{r}
+# a) Discard the variable “No” from the data set.
+
+df <- subset(euroleague_23_24, select = -No)
+
+```
+ 
+
+```{r}
+# b) Split variable “Min” using strsplit() function. Give the name “aux” to the output. 
+#The first element of each row will show the mean minutes that the player played in total. (1p)
+
+aux <- sapply(strsplit(df$Min, split=':'), function(x) x[1])
+
+
+```
+
+
+```{r}
+# c) Add a numerical variable to the data set named “Min 2” which shows on average 
+# how many minutes each player played in the game.
+
+df$Min2 <- as.numeric(aux)
+
+```
+
+
+
+```{r}
+# d) Check the structure of the data and assign correct type to each variable considering 
+# whether it is a categorical or numerical variable.
+
+type_info <- str(df)
+df$TEAM <- as.factor(df$TEAM)
+df$PLAYER<- as.factor(df$PLAYER)
+df$POSITION <- as.factor(df$POSITION)
+df$GP <- as.numeric(df$GP)
+df$GS <- as.numeric(df$GS)
+df <- subset(df, select = -Min)
+
+```
+
+
+2. Application of PCA
+
+```{r}
+# a) Apply PCA on all the scaled numerical variables in the data set by using PCA() 
+# function in FactoMineR package. Treat the categorical variables and the variable “PIR” 
+# as suplemantary variables using arguments quali.sup and quanti.sup correctly. (3p)
+
+library(FactoMineR)
+
+pca_res <- PCA(df, scale.unit = TRUE, graph = FALSE, 
+           quali.sup = which(names(df) %in% c("TEAM","PLAYER","POSITION")),  
+           quanti.sup = which(names(df) == "PIR")) 
+eig_info <- pca_res$eig
+
+```
+
+```{r}
+
+# b) How many components should be extracted? Decide on the number of components considering eigenvalues. (3p)
+
+#Compute Scree plot
+plot(pca_res$eig[,2], type="o", main="Scree Plot: Percentage of Variance by Component", xlab="Number of components", ylab="Percentage of variance", col="blue", pch=16, xaxt="n", yaxt="n")
+axis(1, at=1:length(pca_res$eig[,2]), labels=1:length(pca_res$eig[,2]), las=1)
+axis(2, las=1)
+
+# INTERPRETATION IN THE FILE: Interpretations.pdf, considering pca_res$eig and the scree plot
+
+```
+
+
+```{r}
+
+# c) Interpret the loadings/correlations of variables at each dimension (3p).
+
+pca_res$var$coord[, 1:3]
+pca_res$var$cor[, 1:3]
+
+# INTERPRETATION IN THE FILE: Interpretations.pdf
+
+```
+
+
+```{r}
+# d) Use plot.PCA() function to show correlations between variables and the extracted 
+# dimensions. (For the variables you should use the argument choix = “var”). Plot all
+# the extracted dimensions changing argument “axes”.(3p)
+
+scores <- pca_res$ind$coord
+
+plot.PCA(pca_res, choix = "var", axes = c(1, 2))
+plot.PCA(pca_res, choix = "var", axes = c(1, 3))
+plot.PCA(pca_res, choix = "var", axes = c(2, 3)) 
+
+#plot.PCA(pca_res, choix = "var", axes = c(2, 1)) # same as 1,2
+#plot.PCA(pca_res, choix = "var", axes = c(3, 1)) # same as 1,3
+#plot.PCA(pca_res, choix = "var", axes = c(3, 2)) # same as 2,3
+
+
+```
+
+```{r}
+# e) Interpret variable plots. How can each dimension be named? (5p)
+
+# INTERPRETATION IN THE FILE: Interpretations.pdf
+
+```
+
+
+```{r}
+# f) Show individual plots for the extracted dimensions changing argumennt 
+# choix=“ind” in plot.PCA() function. (2p)
+
+plot.PCA(pca_res, choix = "ind", axes = c(1, 2))
+plot.PCA(pca_res, choix = "ind", axes = c(1, 3))
+plot.PCA(pca_res, choix = "ind", axes = c(2, 3)) 
+
+#plot.PCA(pca_res, choix = "ind", axes = c(2, 1)) # same as 1,2
+#plot.PCA(pca_res, choix = "ind", axes = c(3, 1)) # same as 1,3
+#plot.PCA(pca_res, choix = "ind", axes = c(3, 2)) # same as 2,3
+
+
+```
+
+```{r}
+# g) Interpret the individual plots. (3p)
+
+# INTERPRETATION IN THE FILE: Interpretations.pdf (we used the plots and the 
+# following function to support our insights)
+
+filter_players <- function(df, compare_players, compare_vars) {
+  compare_players <- trimws(compare_players)
+  #Trim white spaces to avoid mismatches
+  filtered_df <- df[trimws(df$PLAYER) %in% compare_players, compare_vars, drop = FALSE]
+  
+  return(filtered_df)
+}
+
+#Compare 2 opposite players of dimension 1 (1 vs 2 dim)
+filter_players(df, c("ALEXANDROS SAMODUROV", "MATHIAS LESSORT"), names(df))
+
+#Compare 2 close players of dimension 2 (1 vs 2 dim)
+filter_players(df, c("MOUSTAPHA FALL", "NIKOLA MILUTINOV"), names(df))
+
+#Compare 2 opposite players of dimension 2 (1 vs 2 dim)
+filter_players(df, c("MATHIAS LESSORT", "FACUNDO CAMPAZZO"), names(df))
+
+#Compare 2 close players in dimension 1 and 2 (1 vs 2 dim)
+filter_players(df, c("MATHIAS LESSORT ", "WALTER TAVARES"), names(df))
+
+
+#Compare 2 close players in dimension 3 (1 vs 3 dim)
+filter_players(df, c("HUGO GONZALEZ", "PANAGIOTIS KALAITZAKIS"), names(df))
+
+#Compare 2 far players in dimension 3 (1 vs 3 dim)
+filter_players(df, c("MATHIAS LESSORT", "HUGO GONZALEZ"), names(df))
+
+
+
+```
+
+3. Application of MDS
+
+```{r}
+
+# a) Apply metric MDS using Euclidean distance on scaled numerical variables. (2p)
+
+player_names <- df$PLAYER
+scaled_numerical_df <- as.data.frame(scale(df[sapply(df, is.numeric)]))
+rownames(scaled_numerical_df) <- player_names
+dist <- dist(scaled_numerical_df, method = "euclidean");
+
+res_mds <- cmdscale(dist,eig=TRUE) 
+
+
+```
+
+```{r}
+
+# b) Plot the data using the points on the first two coordinates using players 
+# names as label. (2p)
+
+plot(res_mds$points[,1], res_mds$points[,2], main = "Multidimensional Scaling Plot", 
+     type = "n", xlab = "First Dimension", ylab = "Second Dimension"); 
+text(res_mds$points[,1], res_mds$points[,2], labels(dist), cex = 0.4, xpd = TRUE)
+
+```
+
+```{r}
+
+# c) Interpret the plot.(3p)
+
+# INTERPRETATION IN THE FILE: Interpretations.pdf
+
+```
+
+
+```{r}
+
+# d) Calculate gower distance including variable “POSITION” to the data matrix. (3p)
+
+library(cluster)
+
+new_df <- as.data.frame(scale(df[sapply(df, is.numeric)]))
+new_df$POSITION <- df$POSITION
+rownames(new_df) <- player_names
+gowerdist <- daisy(new_df,metric = "gower")
+
+```
+
+
+```{r}
+
+# e) Apply metric MDS on gower distance matrix. (2p)
+
+res_mds <- cmdscale(gowerdist,eig=TRUE) 
+
+
+```
+
+
+```{r}
+
+# f) Plot individual plots on the first two coordinates (2p).
+
+plot(res_mds$points[,1], res_mds$points[,2], main = "Multidimensional Scaling Plot",
+     type = "n", xlab = "", ylab = "", axes = FALSE,); text(res_mds$points[,1],
+                                                            res_mds$points[,2], 
+                                                            labels(gowerdist), 
+                                                            cex = 0.4, xpd = TRUE)
+
+
+```
+
+
+```{r}
+
+# g) Use different categorical and numerical variables as labels so as to explain 
+# clusters that are constructed. (5p)
+
+# Plot individuals by position 
+plot(res_mds$points[,1], res_mds$points[,2], main = "Multidimensional Scaling Plot",
+     type = "n", xlab = "", ylab = "", axes = FALSE,); text(res_mds$points[,1], 
+                                                            res_mds$points[,2], 
+                                                            labels = df$POSITION, 
+                                                            cex = 0.4, xpd = TRUE)
+
+# Plot individuals by points
+plot(res_mds$points[,1], res_mds$points[,2], main = "Multidimensional Scaling Plot", 
+     type = "n", xlab = "", ylab = "", axes = FALSE,); text(res_mds$points[,1], 
+                                                            res_mds$points[,2], 
+                                                            labels = df$PTS, 
+                                                            cex = 0.4, xpd = TRUE)
+
+# Plot individuals by minutes played
+plot(res_mds$points[,1], res_mds$points[,2], main = "Multidimensional Scaling Plot", 
+     type = "n", xlab = "", ylab = "", axes = FALSE,); text(res_mds$points[,1], 
+                                                            res_mds$points[,2], 
+                                                            labels = df$Min2, 
+                                                            cex = 0.4, xpd = TRUE)
+
+# Plot individuals by PERSONAL INDEX RATING
+plot(res_mds$points[,1], res_mds$points[,2], main = "Multidimensional Scaling Plot",
+     type = "n", xlab = "", ylab = "", axes = FALSE,); text(res_mds$points[,1], 
+                                                            res_mds$points[,2], 
+                                                            labels = df$PIR, 
+                                                            cex = 0.4, xpd = TRUE)
+
+
+
+
+```
+
+```{r}
+
+# h) Which MDS do you think better group the individuals? Why? (3p)
+
+
+# INTERPRETATION IN THE FILE: Interpretations.pdf
+
+
+```
+
+

@@ -1,0 +1,1135 @@
+---
+title: 'Project'
+author: 'Group 13 : Anna Monsó Rodríguez, Walter J. Troiani Vargas, Joan Acero Pousa'
+date: "2024-11-24"
+output:
+  html_document: default
+  pdf_document: default
+editor_options: 
+  chunk_output_type: console
+---
+# USA 2024 Stock Market analysis
+## 1. Data Loading and Preprocessing
+
+```{r}
+library(car)
+library(MASS)
+library(biotools)
+library(corrplot)
+library(DescTools)
+library(klaR)
+library(FactoMineR)
+library(factoextra)
+library(mice)
+library(psych)  
+library(tidyverse) #easy data manipulation and visualisation
+library(caret) # easy machine learning workflow
+library(REdaS)
+library(cluster)
+rm(list=ls())
+
+# Max number of dimensions to output
+limit <- 10 
+
+df <- read.csv("./USACompanies.csv")
+df2 <- read.csv("./USACompanies.csv")
+df2 <- df2[,-c(4,5)]
+```
+
+Convert categorical variables to factors.
+
+```{r}
+str(df)
+factor_vars <- c("state", "sector", "recommendationKey")
+numeric_vars <- (which(!colnames(df) %in% factor_vars))[-1]
+
+df[factor_vars] <- lapply(df[factor_vars], as.factor)
+sapply(df[factor_vars], table)
+```
+
+Apply transformations to some variables which are in greater magnitudes.
+
+```{r}
+boxplot(df[, numeric_vars], 
+        main = "Boxplots of Numeric Variables", 
+        xlab = "Variables", 
+        ylab = "Values", 
+        las = 2, # Rotate x-axis labels
+        col = rainbow(length(numeric_vars)))
+
+
+transformed_vars <- c("marketCap", "enterpriseValue", "totalCash", "totalDebt", "totalRevenue")
+
+# Apply the signed logarithmic transformation, ensuring NA values are retained
+df[, numeric_vars] <- as.data.frame(lapply(df[, numeric_vars], function(x) {
+  ifelse(is.na(x), NA, sign(x) * 
+           log1p(abs(x))) # Retain NA, apply signed log transformation otherwise
+}))
+
+boxplot(df[, numeric_vars], 
+        main = "Boxplots of Numeric Variables", 
+        xlab = "Variables", 
+        ylab = "Values", 
+        las = 2, # Rotate x-axis labels
+        col = rainbow(length(numeric_vars))) 
+
+```
+
+Process the null values 
+
+```{r}
+#Before imputation: 
+summary(df)
+sapply(df[,numeric_vars], mean, na.rm=T)
+sapply(df[,numeric_vars], median, na.rm=T)
+#remove overallRisk and dividendRate (140 and 243 NAs)
+df<- df[,- c(4,5)]
+
+factor_vars <- c("state", "sector", "recommendationKey")
+numeric_vars <- (which(!colnames(df) %in% factor_vars))[-1]
+
+boxplot(df[, numeric_vars], 
+        main = "Boxplots of Numeric Variables", 
+        xlab = "Variables", 
+        ylab = "Values", 
+        las = 2, # Rotate x-axis labels
+        col = rainbow(length(numeric_vars))) 
+
+res.mice <- mice(df)
+df <- complete(res.mice)
+
+summary(df)
+sapply(df[,numeric_vars], mean)
+sapply(df[,numeric_vars], median)
+
+boxplot(df[, numeric_vars], 
+        main = "Boxplots of Numeric Variables", 
+        xlab = "Variables", 
+        ylab = "Values", 
+        las = 2, # Rotate x-axis labels
+        col = rainbow(length(numeric_vars))) 
+
+
+```
+
+
+## 2. Exploratory Data Analysis
+
+### 2.1 Description and normality study
+
+```{r}
+str(df)
+summary(df)
+```
+
+
+#### 2.1.1 shortName (Categorical) (Supplementary)
+
+```{r}
+length(unique(df$shortName))
+```
+
+#### 2.1.2 state (Categorical) (Supplementary)
+
+```{r}
+n <- length(unique(df$state)); n
+state_freq <- table(df$state)
+state_freq_sorted <- sort(state_freq, decreasing = TRUE)
+
+barplot(state_freq_sorted,
+        main = "Frequency of States (Sorted)",
+        xlab = "State",
+        ylab = "Count",
+        col = rainbow(n),
+        las = 2,        # Rotate x-axis labels for readability
+        cex.names = 0.7 # Adjust label size for clarity
+)
+```
+
+#### 2.1.3 sector (Categorical)
+
+```{r}
+n <- length(unique(df$sector)); n
+sector_freq <- table(df$sector);
+sector_freq_sorted <- sort(sector_freq, decreasing=TRUE)
+
+barplot(sector_freq_sorted,
+        main = "Frequency of Sectors (Sorted)",
+        xlab = "Sector",
+        ylab = "Count",
+        col = rainbow(n),
+        las = 2,        # Rotate x-axis labels for readability
+        cex.names = 0.7 # Adjust label size for clarity
+)
+
+```
+
+#### 2.1.4 marketCap (Numerical)
+
+**marketCap** numerical continious variable represents the market capitalization of the company, often calculated as $MarketCap = SharePrice \cdot TotalSharesOutstanding$. Its distribution does not seem normal at all, it has an extreme right skewness.
+
+```{r}
+summary(df$marketCap)
+hist(x=df$marketCap, 20)
+shapiro.test(df$marketCap)
+ks.test(df$marketCap, "pnorm", mean=mean(df$marketCap), sd = sd(df$marketCap))
+qqnorm(df$marketCap)
+qqline(df$marketCap, col = "red")
+
+```
+
+#### 2.1.5 enterpriseValue (Numerical)
+
+**enterpriseValue** numerical continious variable represents a measure of the company's total value, including equity and debt, often computed as $Enterprise Value=Market Cap+Total Debt−Cash and Equivalents$. Similarly to **marketCap**, its highly unlikely that this distribution is normal  due to the even more extreme right skewness.
+
+```{r}
+summary(df$enterpriseValue)
+hist(x=df$enterpriseValue, 20)
+shapiro.test(df$enterpriseValue)
+ks.test(df$enterpriseValue, "pnorm", mean=mean(df$enterpriseValue), sd = sd(df$enterpriseValue))
+qqnorm(df$enterpriseValue)
+qqline(df$enterpriseValue, col = "red")
+
+```
+
+#### 2.1.6 profitMargins (Numerical)
+
+**profitMargins** numerical variable represents the percentage of revenue that becomes profit, often computed as: $ProfitMargin = \frac{NetProfit}{TotalRevenue} \cdot 100$. The distribution seems to be normal except for an extreme concentration of values around 1 and the long right tail. 
+
+```{r}
+summary(df$profitMargins)
+hist(x=df$profitMargins, breaks=100)
+shapiro.test(df$profitMargins)
+ks.test(df$profitMargins, "pnorm", mean=mean(df$profitMargins), sd = sd(df$profitMargins))
+qqnorm(df$profitMargins)
+qqline(df$profitMargins, col = "red")
+
+```
+
+#### 2.1.7 recommendationKey (Categorical)
+
+**recommendationKey** categorical variable represents a suggestion of the best action to perform to this stock, predicted by yahoo finance models. There are 5 unique values (buy, hold, none, strong_buy, underperform) and its count distribution resembles an exponential one rather than a $\chi^2$.
+
+```{r}
+summary(df$recommendationKey)
+n <- length(unique(df$recommendationKey));n
+recomm_freq <- table(df$recommendationKey);
+recom_freq_sorted <- sort(recomm_freq, decreasing=TRUE)
+
+barplot(recom_freq_sorted,
+        main = "Frequency of Recommendations (Sorted)",
+        xlab = "Recommendation",
+        ylab = "Count",
+        col = rainbow(n),
+        las = 2,        # Rotate x-axis labels for readability
+        cex.names = 0.7 # Adjust label size for clarity
+)
+
+```
+
+#### 2.1.8 totalCash (Numerical) 
+
+**totalCash** numerical variable represents the total amound of cash and equivalents that the company holds. Again, its distribution seems almost normal except for an extreme concentration around a concrete value and its right skewness.
+
+```{r}
+summary(df$totalCash)
+hist(x=df$totalCash, breaks=30)
+shapiro.test(df$totalCash)
+ks.test(df$totalCash, "pnorm", mean=mean(df$totalCash), sd = sd(df$totalCash))
+qqnorm(df$totalCash)
+qqline(df$totalCash, col = "red")
+```
+
+#### 2.1.9 totalCashPerShare (Numerical)
+
+**totalCashPerShare** numerical variable represents the total cash held by the company per outstanding share: $TotalCashPerShare = \frac{TotalCash}{TotalSharesOutstanding}$. Similarly to past examples, its extreme left skewness shows a lack of normality.
+
+```{r}
+
+summary(df$totalCashPerShare)
+hist(x=df$totalCashPerShare, 20)
+shapiro.test(df$totalCashPerShare)
+ks.test(df$totalCashPerShare, "pnorm", mean=mean(df$totalCashPerShare), sd = sd(df$totalCashPerShare))
+qqnorm(df$totalCashPerShare)
+qqline(df$totalCashPerShare, col = "red")
+```
+
+#### 2.1.10 totalDebt (Numerical)
+
+**totalDebt** numerical variable represents the total amount of debt the company owes. Similarly to all past examples, this sample demonstrates a lack of normality due to its extreme right skewness.
+
+```{r}
+
+summary(df$totalDebt)
+hist(x=df$totalDebt, 50)
+shapiro.test(df$totalDebt)
+ks.test(df$totalDebt, "pnorm", mean=mean(df$totalDebt), sd = sd(df$totalDebt))
+qqnorm(df$totalDebt)
+qqline(df$totalDebt, col = "red")
+
+```
+
+#### 2.1.11 totalRevenue (Numerical)
+
+**totalRevenue** numerical variable represents the total income generated by the company from its operations over a specific period. Likewise past variables, there is a humongous right skewness, proving a lack of normality of the sample.
+
+```{r}
+summary(df$totalRevenue)
+hist(x=df$totalRevenue, 40)
+shapiro.test(df$totalRevenue)
+ks.test(df$totalRevenue, "pnorm", mean=mean(df$totalRevenue), sd = sd(df$totalRevenue))
+qqnorm(df$totalRevenue)
+qqline(df$totalRevenue, col = "red")
+
+```
+
+#### 2.1.12 revenueGrowth (Numerical)
+
+**revenueGrowth** numerical variable represents the the growth rate of a revenue compared to the previous period, often computed as: $RevenueGrowth = \frac{CurrentRevenue - PastRevenue}{PastRevenue}$. Not surprisingly, this variable doesn't seem to show normality due to its extreme concentration of values around 0.
+
+```{r}
+summary(df$revenueGrowth)
+hist(x=df$revenueGrowth, 30)
+shapiro.test(df$revenueGrowth)
+ks.test(df$revenueGrowth, "pnorm", mean=mean(df$revenueGrowth), sd = sd(df$revenueGrowth))
+qqnorm(df$revenueGrowth)
+qqline(df$revenueGrowth, col = "red")
+```
+
+### 2.2 Relations among variables
+
+```{r}
+(cor(df[, numeric_vars]))
+corrplot(cor(df[, numeric_vars]))
+
+```
+
+### 2.3 Transformations
+
+```{r}
+
+boxcox_transform <- function(y, lambda) {
+  if (any(y <= 0)) {
+    stop("All values of y must be positive for the Box-Cox transformation.")
+  }
+  if (lambda == 0) {
+    return(log(y))  # Log transformation when lambda = 0
+  } else {
+    return((y^lambda - 1) / lambda)  # Box-Cox transformation when lambda ≠ 0
+  }
+}
+
+get_lambda <- function(y) {
+  res_box <- boxcox(y ~ 1)
+  index <- which.max(res_box$y)
+  return(res_box$x[index])
+}
+
+assess_normality_of_transformed_variable <- function(variable, bins = 10) {
+  # Capture the variable name dynamically
+  variable_name <- deparse(substitute(variable))
+  
+  # Perform the Box-Cox transformation
+  lambda <- get_lambda(variable)
+  trans_var <- boxcox_transform(variable, lambda)
+  
+  # Plot the histogram with the variable name as the title
+  hist(trans_var, breaks = bins, 
+       main = paste("Histogram of", variable_name, "(Transformed)"), 
+       xlab = paste(variable_name, "Transformed"), 
+       col = "lightblue", border = "black")
+  
+  # Perform Shapiro-Wilk normality test
+  shapiro_result <- shapiro.test(trans_var)
+  cat("Shapiro-Wilk p-value for", variable_name, ":", shapiro_result$p.value, "\n")
+  
+  # Perform Kolmogorov-Smirnov test for normality
+  ks_result <- ks.test(trans_var, "pnorm", mean(trans_var), sd(trans_var))
+  cat("Kolmogorov-Smirnov p-value for", variable_name, ":", ks_result$p.value, "\n")
+  
+  # Return a list with both p-values
+  return(list(shapiro_p_value = shapiro_result$p.value, ks_p_value = ks_result$p.value))
+}
+
+```
+
+#### 2.3.1 marketCap
+
+```{r}
+assess_normality_of_transformed_variable(df$marketCap, bins=10)
+
+hist(log(df$marketCap),20)
+qqnorm(log(df$marketCap))
+qqline(log(df$marketCap), col = "red")
+ks.test(log(df$marketCap), "pnorm", mean(log(df$marketCap)), 
+        sd(log(df$marketCap)))
+
+hist(sqrt(df$marketCap),20)
+qqnorm(sqrt(df$marketCap))
+qqline(sqrt(df$marketCap), col = "red")
+ks.test(sqrt(df$marketCap), "pnorm", mean(sqrt(df$marketCap)), 
+        sd(sqrt(df$marketCap)))
+
+```
+
+#### 2.3.2 enterpriseValue
+
+```{r}
+
+#Perform a data shift to avoid negative values
+min_value <- min(df$enterpriseValue)
+shift_value <- abs(min_value) + 1 
+enterpriseValue_shifted <- df$enterpriseValue + shift_value
+assess_normality_of_transformed_variable(enterpriseValue_shifted, bins=10)
+
+qqnorm(df$enterpriseValue)
+qqline(df$enterpriseValue, col = "red")
+
+hist(log(enterpriseValue_shifted),20)
+qqnorm(log(enterpriseValue_shifted))
+qqline(log(enterpriseValue_shifted), col = "red")
+ks.test(log(enterpriseValue_shifted), "pnorm", 
+        mean(log(enterpriseValue_shifted)), sd(log(enterpriseValue_shifted)))
+
+hist(sqrt(enterpriseValue_shifted),20)
+qqnorm(sqrt(enterpriseValue_shifted))
+qqline(sqrt(enterpriseValue_shifted), col = "red")
+ks.test(sqrt(enterpriseValue_shifted), 
+        "pnorm", mean(sqrt(enterpriseValue_shifted)), 
+        sd(sqrt(enterpriseValue_shifted)))
+
+```
+
+#### 2.3.3 profitMargins
+
+```{r}
+#Perform a data shift to avoid negative values
+min_value <- min(df$profitMargins)
+shift_value <- abs(min_value) + 1 
+profitMargins_shifted <- df$profitMargins + shift_value
+
+assess_normality_of_transformed_variable(profitMargins_shifted, bins=20)
+
+hist(log(profitMargins_shifted),20)
+qqnorm(log(profitMargins_shifted))
+qqline(log(profitMargins_shifted), col = "red")
+ks.test(log(profitMargins_shifted), "pnorm", mean(log(profitMargins_shifted)), sd(log(profitMargins_shifted)))
+
+hist(sqrt(profitMargins_shifted),20)
+qqnorm(sqrt(profitMargins_shifted))
+qqline(sqrt(profitMargins_shifted), col = "red")
+ks.test(sqrt(profitMargins_shifted), "pnorm", mean(sqrt(profitMargins_shifted)), sd(sqrt(profitMargins_shifted)))
+
+```
+
+#### 2.3.4 totalCash (Normal)
+
+```{r}
+#Perform a data shift to avoid negative values
+min_value <- min(df$totalCash)
+shift_value <- abs(min_value) + 1 
+totalCash_shifted <- df$totalCash + shift_value
+
+assess_normality_of_transformed_variable(totalCash_shifted, bins=10)
+
+
+qqnorm(totalCash_shifted)
+qqline(totalCash_shifted, col = "red")
+
+# Applying the transformation
+lambda <- get_lambda(totalCash_shifted)  # Get optimal lambda
+df$totalCash <- boxcox_transform(totalCash_shifted, lambda)
+
+qqnorm(df$totalCash)
+qqline(df$totalCash, col = "red")
+
+```
+
+#### 2.3.5 totalCashPerShare (Normal)
+
+```{r}
+assess_normality_of_transformed_variable(df$totalCashPerShare, bins=10)
+
+qqnorm(df$totalCashPerShare)
+qqline(df$totalCashPerShare, col = "red")
+
+# Applying the transformation
+lambda <- get_lambda(df$totalCashPerShare)  # Get optimal lambda
+df$totalCashPerShare <- boxcox_transform(df$totalCashPerShare, lambda)
+
+qqnorm(df$totalCashPerShare)
+qqline(df$totalCashPerShare, col = "red")
+```
+
+#### 2.3.6 totalDebt
+
+```{r}
+assess_normality_of_transformed_variable(df$totalDebt, bins=10)
+
+hist(log(df$totalDebt),20)
+qqnorm(log(df$totalDebt))
+qqline(log(df$totalDebt), col = "red")
+ks.test(log(df$totalDebt), "pnorm", mean(log(df$totalDebt)), 
+        sd(log(df$totalDebt)))
+
+hist(sqrt(df$totalDebt),20)
+qqnorm(sqrt(df$totalDebt))
+qqline(sqrt(df$totalDebt), col = "red")
+ks.test(sqrt(df$totalDebt), "pnorm", mean(sqrt(df$totalDebt)),
+        sd(sqrt(df$totalDebt)))
+
+```
+
+#### 2.3.7 totalRevenue
+
+```{r}
+#Perform a data shift to avoid negative values
+min_value <- min(df$totalRevenue)
+shift_value <- abs(min_value) + 1 
+totalRevenue_shifted <- df$totalRevenue + shift_value
+
+assess_normality_of_transformed_variable(totalRevenue_shifted, bins=10)
+
+hist(log(totalRevenue_shifted),100)
+qqnorm(log(totalRevenue_shifted))
+qqline(log(totalRevenue_shifted), col = "red")
+ks.test(log(totalRevenue_shifted), "pnorm", mean(log(totalRevenue_shifted)), sd(log(totalRevenue_shifted)))
+
+hist(sqrt(totalRevenue_shifted),20)
+qqnorm(sqrt(totalRevenue_shifted))
+qqline(sqrt(totalRevenue_shifted), col = "red")
+ks.test(sqrt(totalRevenue_shifted), "pnorm", mean(sqrt(totalRevenue_shifted)), sd(sqrt(totalRevenue_shifted)))
+```
+
+#### 2.3.8 revenueGrowth
+
+```{r}
+#Perform a data shift to avoid negative values
+min_value <- min(df$revenueGrowth)
+shift_value <- abs(min_value) + 1 
+revenueGrowth_shifted <- df$revenueGrowth + shift_value
+
+assess_normality_of_transformed_variable(revenueGrowth_shifted, bins=10)
+
+
+hist(log(revenueGrowth_shifted),100)
+qqnorm(log(revenueGrowth_shifted))
+qqline(log(revenueGrowth_shifted), col = "red")
+ks.test(log(revenueGrowth_shifted), "pnorm", mean(log(revenueGrowth_shifted)), sd(log(revenueGrowth_shifted)))
+
+hist(sqrt(revenueGrowth_shifted),20)
+qqnorm(sqrt(revenueGrowth_shifted))
+qqline(sqrt(revenueGrowth_shifted), col = "red")
+ks.test(sqrt(revenueGrowth_shifted), "pnorm", mean(sqrt(revenueGrowth_shifted)), sd(sqrt(revenueGrowth_shifted)))
+```
+
+### 2.4 Analysis of variance
+
+In this section an analysis of the Homoskedasticity or Heteroskedasticity of the variables is provided, in order to asses if the assumption of homoskedasticity holds for performing inferential tests (i.e Hotelling $T^2$, Manova) and avoiding methods that require this assumption to be met (i.e Linear discriminant analysis).
+
+Firstly, there are only 3 plausible categorical variables that are of interest for the purpose of this analysis, **state**, **sector** and **recommendationKey**. Secondly, we need to perform this using the normal variables.
+
+```{r}
+sufficient_states <- names(which(table(df$state) >= 8))
+df_filtered <- df[df$state %in% sufficient_states, ]
+table(df_filtered$state)
+boxM(df_filtered[, numeric_vars], df_filtered$state)
+
+# Boxplots for each numerical variable by 'state'
+boxplot(df$marketCap ~ df$state,
+        main = "Boxplot of marketCap by state",
+        xlab = "state",
+        ylab = "marketCap",
+        col = "red")
+
+boxplot(df$enterpriseValue ~ df$state,
+        main = "Boxplot of enterpriseValue by state",
+        xlab = "state",
+        ylab = "enterpriseValue",
+        col = "darkred")
+
+boxplot(df$profitMargins ~ df$state,
+        main = "Boxplot of profitMargins by state",
+        xlab = "state",
+        ylab = "profitMargins",
+        col = "darkgreen")
+
+boxplot(df$totalCash ~ df$state,
+        main = "Boxplot of totalCash by state",
+        xlab = "state",
+        ylab = "totalCash",
+        col = "purple")
+
+boxplot(df$totalCashPerShare ~ df$state,
+        main = "Boxplot of totalCashPerShare by state",
+        xlab = "state",
+        ylab = "totalCashPerShare",
+        col = "pink")
+
+boxplot(df$totalDebt ~ df$state,
+        main = "Boxplot of totalDebt by state",
+        xlab = "state",
+        ylab = "totalDebt",
+        col = "lightpink")
+
+boxplot(df$totalRevenue ~ df$state,
+        main = "Boxplot of totalRevenue by state",
+        xlab = "state",
+        ylab = "totalRevenue",
+        col = "black")
+
+boxplot(df$revenueGrowth ~ df$state,
+        main = "Boxplot of revenueGrowth by state",
+        xlab = "state",
+        ylab = "revenueGrowth",
+        col = "brown")
+```
+
+```{r}
+table(df$sector)
+boxM(df[, numeric_vars], df$sector)
+# Boxplots for each numerical variable by 'sector'
+
+boxplot(df$marketCap ~ df$sector,
+        main = "Boxplot of marketCap by sector",
+        xlab = "sector",
+        ylab = "marketCap",
+        col = "red", las=2)
+
+
+boxplot(df$enterpriseValue ~ df$sector,
+        main = "Boxplot of enterpriseValue by sector",
+        xlab = "state",
+        ylab = "enterpriseValue",
+        col = "darkred", las=2)
+
+boxplot(df$profitMargins ~ df$sector,
+        main = "Boxplot of profitMargins by sector",
+        xlab = "sector",
+        ylab = "profitMargins",
+        col = "darkgreen", las=2)
+
+boxplot(df$totalCash ~ df$sector,
+        main = "Boxplot of totalCash by sector",
+        xlab = "sector",
+        ylab = "totalCash",
+        col = "purple", las=2)
+
+boxplot(df$totalCashPerShare ~ df$sector,
+        main = "Boxplot of totalCashPerShare by sector",
+        xlab = "sector",
+        ylab = "totalCashPerShare",
+        col = "pink", las=2)
+
+boxplot(df$totalDebt ~ df$sector,
+        main = "Boxplot of totalDebt by sector",
+        xlab = "sector",
+        ylab = "totalDebt",
+        col = "lightpink", las=2)
+
+boxplot(df$totalRevenue ~ df$sector,
+        main = "Boxplot of totalRevenue by sector",
+        xlab = "sector",
+        ylab = "totalRevenue",
+        col = "black", las=2)
+
+boxplot(df$revenueGrowth ~ df$sector,
+        main = "Boxplot of revenueGrowth by sector",
+        xlab = "sector",
+        ylab = "revenueGrowth",
+        col = "brown", las=2)
+```
+
+```{r}
+table(df$recommendationKey)
+boxM(df[, numeric_vars], df$recommendationKey)
+# Boxplots for each numerical variable by 'recommendationKey'
+
+boxplot(df$marketCap ~ df$recommendationKey,
+        main = "Boxplot of marketCap by recommendationKey",
+        xlab = "recommendationKey",
+        ylab = "marketCap",
+        col = "red")
+
+boxplot(df$enterpriseValue ~ df$recommendationKey,
+        main = "Boxplot of enterpriseValue by recommendationKey",
+        xlab = "recommendationKey",
+        ylab = "enterpriseValue",
+        col = "pink")
+
+boxplot(df$profitMargins ~ df$recommendationKey,
+        main = "Boxplot of profitMargins by recommendationKey",
+        xlab = "recommendationKey",
+        ylab = "profitMargins",
+        col = "purple")
+
+boxplot(df$totalCash ~ df$recommendationKey,
+        main = "Boxplot of totalCash by recommendationKey",
+        xlab = "recommendationKey",
+        ylab = "totalCash",
+        col = "lightpink")
+
+boxplot(df$totalCashPerShare ~ df$recommendationKey,
+        main = "Boxplot of totalCashPerShare by recommendationKey",
+        xlab = "recommendationKey",
+        ylab = "totalCashPerShare",
+        col = "black")
+
+boxplot(df$totalDebt ~ df$recommendationKey,
+        main = "Boxplot of totalDebt by recommendationKey",
+        xlab = "recommendationKey",
+        ylab = "totalDebt",
+        col = "darkgreen")
+
+boxplot(df$totalRevenue ~ df$recommendationKey,
+        main = "Boxplot of totalRevenue by recommendationKey",
+        xlab = "recommendationKey",
+        ylab = "totalRevenue",
+        col = "darkred")
+
+boxplot(df$revenueGrowth ~ df$recommendationKey,
+        main = "Boxplot of revenueGrowth by recommendationKey",
+        xlab = "recommendationKey",
+        ylab = "revenueGrowth",
+        col = "darkblue")
+```
+
+
+## 3. Multivariate Analysis
+
+### 3.1 Principal Component Analysis
+
+
+```{r}
+
+rownames(df) <- 1:nrow(df)
+
+pca_res <- PCA(df, scale.unit=T, graph=T,
+               quali.sup=which(names(df) %in% c("shortName", "state", "sector", "recommendationKey")),
+               )
+eigens <- pca_res$eig; eigens
+pca_res$var$contrib
+# comp1: 4.01 # comp2: 1.222 
+
+#Plot a scree plot
+plot(pca_res$eig[,2], type="o", 
+     main="Scree Plot: Percentage of Variance by Component",
+     xlab="Number of components", ylab="Percentage of variance",
+     col="blue", pch=16, xaxt="n", yaxt="n")
+axis(1, at=1:length(pca_res$eig[,2]), labels=1:length(pca_res$eig[,2]), las=1)
+axis(2, las=1)
+
+# Interpretation of hte leadings/correlations of variables at each dimension
+pca_res$var$coord[, 1:3]
+# dim 1 vs dim 2
+fviz_pca_biplot(
+  pca_res, 
+  axes = c(1,2),
+  label = "var",   
+  # habillage = df$sector,
+  # addEllipses = TRUE, 
+  pointsize = 1,
+  repel = TRUE            # Avoid overlapping labels
+)
+
+plot.PCA(pca_res, choix = "ind", label = "ind", axes = c(1, 2))
+
+## FACTOR ANALYSIS 
+
+```
+
+```{r}
+###### Bartlett's Test of Spherecity####
+# bartlett test to check if the variables are correlated
+bart_spher(df[,c(4:6,8:12)]) # p_value = 2.23e-16 --> they are correlated 
+###### Kaiser-Meyer-Olkin (KMO) Test ###
+kmo <- function(x)
+{
+  x <- subset(x, complete.cases(x))   # Omit missing values
+  r <- cor(x)                         # Correlation matrix
+  r2 <- r^2                           # Squared correlation coefficients
+  i <- solve(r)                       # Inverse matrix of correlation matrix
+  d <- diag(i)                        # Diagonal elements of inverse matrix
+  p2 <- (-i/sqrt(outer(d, d)))^2      # Squared partial correlation coefficients
+  diag(r2) <- diag(p2) <- 0           # Delete diagonal elements
+  KMO <- sum(r2)/(sum(r2)+sum(p2))
+  MSA <- colSums(r2)/(colSums(r2)+colSums(p2))
+  return(list(KMO=KMO, MSA=MSA))
+}
+
+#KMO index
+kmo(df[,c(4:6,8:12)])
+
+
+#$KMO
+#[1] 0.794
+# KMO index shows that the data is factorable. 
+
+#factor analysis
+fa_res <- fa(df[,c(4:6,9:12)], nfactors = 4, rotate="varimax")
+fa_res
+fa.diagram(fa_res)
+
+
+```
+
+
+### 3.2 Multidimensional Scaling
+
+Following up, the principal coordinate analysis (PCoA or MDS) is presented using 2 kinds of distances: Euclidean for numerical variables and Gower distance for mixed data. The results are clear, if we only make use of 2 dimensions, then the approach using euclidean distance, more dissimilarity is retained by the 2 principal dimensions.
+
+
+#### 3.2.1 Numerical variables
+
+```{r}
+# Prepare numerical data
+num_df <- df[, numeric_vars]
+rownames(num_df) <- df$shortName
+
+# Compute Euclidean distance and MDS
+dist_euc <- dist(num_df, method = "euclidean")
+mds_num <- cmdscale(dist_euc, eig = TRUE)
+
+# Perform k-means clustering (2 clusters)
+kmeans_result_num <- kmeans(mds_num$points, centers = 2)
+num_df$cluster <- as.factor(kmeans_result_num$cluster)
+
+# Scree Plot for Euclidean distance
+distance_preserved_num <- mds_num$eig / sum(abs(mds_num$eig)) * 100
+barplot(distance_preserved_num[1:limit], 
+        main = "Scree Plot (Euclidean distance)", 
+        xlab = "Dimension", 
+        ylab = "Percentage of distance preserved", 
+        col = rainbow(limit))
+
+# MDS Plot with clusters
+cluster_colors <- setNames(rainbow(length(unique(num_df$cluster))), levels(num_df$cluster))
+plot(mds_num$points[, 1], mds_num$points[, 2], 
+     col = cluster_colors[kmeans_result_num$cluster], pch = 19, cex = 0.7,
+     main = "MDS Plot (Euclidean distance with Clusters)",
+     xlab = sprintf("First Dimension (%.2f%%)", distance_preserved_num[1]),
+     ylab = sprintf("Second Dimension (%.2f%%)", distance_preserved_num[2]))
+text(mds_num$points[, 1], mds_num$points[, 2], 
+     labels = rownames(num_df), cex = 0.6, pos = 4, col = cluster_colors[kmeans_result_num$cluster])
+
+# Profiling clusters
+catdes(num_df, proba = 0.05, num.var = ncol(num_df))
+
+```
+
+#### 3.2.2 Mixed variables
+
+```{r}
+# Prepare data
+summary(df)
+num_vars <- c("marketCap", "enterpriseValue", "profitMargins", "totalCash", "totalCashPerShare", "totalDebt", "totalRevenue", "revenueGrowth")
+categ_df <- df[, c(num_vars, "sector", "recommendationKey")]
+rownames(categ_df) <- df$shortName
+
+# Compute Gower distance and MDS
+dist_gow <- daisy(categ_df, metric = "gower")
+mds_mix <- cmdscale(dist_gow, eig = TRUE)
+
+
+# Perform k-means clustering (3 clusters)
+kmeans_result <- kmeans(mds_mix$points, centers = 3)
+table(kmeans_result$cluster)
+table(categ_df$cluster)
+categ_df$cluster <- as.factor(kmeans_result$cluster)
+
+
+# Scree Plot 
+distance_preserved <- mds_mix$eig / sum(abs(mds_mix$eig)) * 100; distance_preserved[1] + distance_preserved[2]
+barplot(distance_preserved[1:limit], 
+        main = "Scree Plot (Gower distance)", 
+        xlab = "Dimension", 
+        ylab = "Percentage of distance preserved", 
+        col = rainbow(limit))
+
+# MDS Plot with clusters
+cluster_colors <- setNames(rainbow(length(unique(categ_df$cluster))), levels(categ_df$cluster))
+plot(mds_mix$points[, 1], mds_mix$points[, 2], 
+     col = cluster_colors[categ_df$cluster], pch = 19, cex = 0.7,
+     main = "MDS Plot (Gower distance with Clusters)",
+     xlab = sprintf("First Dimension (%.2f%%)", distance_preserved[1]),
+     ylab = sprintf("Second Dimension (%.2f%%)", distance_preserved[2]))
+text(mds_mix$points[, 1], mds_mix$points[, 2], 
+     labels = rownames(categ_df), cex = 0.6, pos = 4, col = cluster_colors[categ_df$cluster])
+
+# Profiling clusters
+catdes(categ_df, proba = 0.05, num.var = ncol(categ_df))
+```
+
+### 3.3 Correspondence Analysis
+
+Following up we want to analyze the relationship between categories of the 3 categorical variables, however after performing MCA with state, it can be seen that a lot of noise is added into the mix therefore explainablity is greatly reduced and that the retained variance per dimension gets too low. Not only that, but almost every single state has a extremely low contribution to the overall variability/inertia. Given the nature of this variable a normal correspondence analysis using state as supplementary is more suited.
+
+
+
+```{r}
+contingency_table <- table(df$sector, df$recommendationKey); contingency_table
+res_ca <- CA(contingency_table)
+
+# 1. Scree Plot (Eigenvalues)
+cumulative_inertia <- cumsum(res_ca$eig[, 2])  
+avg_eigen <- mean(res_ca$eig[, 1])  
+
+# Eigenvalues and Cumulative variance
+par(mfrow = c(1, 2))  # Split plotting window for two plots
+plot(res_ca$eig[, 2], type = "b", pch = 16, lwd = 2, 
+     xlab = "Dimensions", ylab = "Percentage of Variance", 
+     main = "Variance explained", col = "blue")
+
+plot(res_ca$eig[, 1], type = "b", pch = 16, lwd = 2, 
+     xlab = "Dimensions", ylab = "Eigenvalue", 
+     main = "Average eigenvalue comparison", col = "purple")
+abline(h = avg_eigen, col = "red", lty = 2)  # Average eigenvalue threshold
+
+# Plot row categories (sectors)
+fviz_ca_row(res_ca, repel = TRUE, col.row = "contrib", 
+            gradient.cols = c("blue", "green", "red"), 
+            title = "CA - Row Categories (Companies/Sectors)")
+
+# Plot column categories (recommendations)
+fviz_ca_col(res_ca, repel = TRUE, col.col = "contrib", 
+            gradient.cols = c("blue", "green", "red"), 
+            title = "CA - Column Categories (Recommendation Keys)")
+
+# Both profiles together
+fviz_ca_biplot(res_ca, repel = TRUE, col.row = "contrib", 
+               col.col = "contrib", gradient.cols = c("blue", "green", "red"),
+               title = "CA - Biplot", labelsize=8)
+```
+
+### 3.4 Clustering Analysis
+
+
+```{r}
+?HCPC
+res.hcpc <- HCPC(pca_res, min=2,nb.clust=-1, graph=TRUE)
+nb.clust <- res.hcpc$call$t$nb.clust
+res.hcpc$call$t
+res.hcpc$desc.var
+
+
+# Visualisation of clusters
+fviz_dend(res.hcpc, k = nb.clust, rect = TRUE, rect_fill = TRUE)
+fviz_cluster(res.hcpc, repel = TRUE, show.clust.cent = TRUE,
+             main = "Factor map", ggtheme= theme_minimal())
+plot(res.hcpc, choice = "3D.map")
+
+#take extreme examples of the clusters
+df[610, 1]
+df[609, 1]
+df[502, 1]
+df[7, 1]
+df[63, 1]
+df[254, 1]
+
+```
+
+### 3.5 Discriminant Analysis
+
+#### 3.5.1 Preprocessing
+```{r}
+
+# Ensure the dataset is balanced on the predicted variable:
+
+ll <- which(df$recommendationKey=="strong_buy" | 
+              df$recommendationKey=="underperform")
+length(ll)
+df<-df[-ll,]
+table(df$recommendationKey)
+df <- df %>%
+  mutate(recommendationKey = case_when(
+    recommendationKey == "strong_buy" ~ "buy",      # Change "strong buy" to "buy"
+    recommendationKey == "underperform" ~ "none",  # Change "underperform" to "none"
+    TRUE ~ recommendationKey                        # Leave other values unchanged
+  ))
+table(df$recommendationKey)
+
+##################################################
+##optional -> Balance the dataset.################
+
+# Separate the data by class
+buy_data <- df %>% filter(recommendationKey == "buy")
+hold_data <- df %>% filter(recommendationKey == "hold")
+none_data <- df %>% filter(recommendationKey == "none")
+
+# Get the minimum class size
+min_class_size <- min(nrow(buy_data), nrow(hold_data), nrow(none_data))
+
+# Undersample the majority classes
+buy_data_undersampled <- sample_n(buy_data, min_class_size)
+hold_data_undersampled <- sample_n(hold_data, min_class_size)
+none_data_undersampled <- sample_n(none_data, min_class_size)
+
+# Combine the undersampled data
+df <- bind_rows(buy_data_undersampled, hold_data_undersampled, none_data_undersampled)
+
+# Check the class distribution after undersampling
+table(df$recommendationKey)
+
+##################################################
+
+
+
+#split data in training and test set
+set.seed(123)
+training.samples <- df$recommendationKey %>% createDataPartition(p = 0.8, list = FALSE)
+train.data <- df[training.samples, ]
+test.data <- df[-training.samples, ]
+
+# Standardize the data. Categorical variables are automatically ignored.
+# Estimate preprocessing parameters
+preproc.param <- train.data %>% 
+  preProcess(method = c("center", "scale"))
+# Transform the data using the estimated parameters
+train.transformed <- preproc.param %>% predict(train.data)
+test.transformed <- preproc.param %>% predict(test.data)
+
+```
+
+#### 3.5.2 Train the model
+
+```{r}
+###########################################
+# Use stepwise to keep relevant variables #
+###########################################
+
+predictors <- train.transformed[, c("marketCap", "enterpriseValue", "profitMargins", 
+                                    "totalCash", "totalCashPerShare", "totalDebt", 
+                                    "totalRevenue", "revenueGrowth")]
+
+response <- train.transformed$recommendationKey  
+
+# Perform Stepwise QDA Classification with backward selection and CR criterion
+stepwise_qda <- stepclass(predictors, response, method="qda", 
+                          direction="backward", criterion="CR")
+print(stepwise_qda)
+
+############################################
+#   Create model with seldected variables  #
+############################################
+
+data2 <- train.transformed[, c("marketCap" , "profitMargins" , "totalCash" , "totalCashPerShare" ,
+    "totalDebt" , "totalRevenue", "recommendationKey")]
+
+data3 <- train.transformed[, c("marketCap" , "enterpriseValue" , "profitMargins" , "totalDebt" ,
+    "totalRevenue" , "recommendationKey")]
+
+QDA <- qda(recommendationKey~., data = data3)
+QDA
+
+# Make predictions
+predictions <- QDA %>% predict(test.transformed)
+
+mean(predictions$class == test.transformed$recommendationKey)
+
+#Contingency Table of Observed and Predicted Values
+# Contingency Table of Observed and Predicted Values
+tab <- table(Observed = test.transformed$recommendationKey, Predicted = predictions$class)
+
+# Print the contingency table
+print(tab)
+
+#CCR across groups (over rows)
+diag(prop.table(tab, 1))
+
+```
+
+###3.5.2 Try with LDA model
+
+```{r}
+
+#########################################
+#       try LDA with same vars.         #
+#########################################
+
+#check var.homogeneity
+
+# Boxplot for totalCash by recommendationKey
+ggplot(df, aes(x = recommendationKey, y = totalCash, fill = recommendationKey)) +
+  geom_boxplot() +
+  labs(title = "Boxplot of totalCash by recommendationKey",
+       x = "Recommendation Key", y = "Total Cash") +
+  theme_minimal()
+
+ggplot(df, aes(x = recommendationKey, y = totalCashPerShare, fill = recommendationKey)) +
+  geom_boxplot() +
+  labs(title = "Boxplot of totalCashPerShare by recommendationKey",
+       x = "Recommendation Key", y = "Total Cash Per Share") +
+  theme_minimal()
+
+
+data <- train.transformed[, c("totalCash", "totalCashPerShare", "recommendationKey")]
+
+databalancedDF <- train.transformed[, c("marketCap" , "profitMargins" , "totalCash" , "totalCashPerShare" ,
+    "totalDebt" , "totalRevenue", "recommendationKey")]
+
+
+
+modelLDA <- lda(recommendationKey~., data = data)
+modelLDA
+
+# Make predictions
+predictionLDAs <- modelLDA %>% predict(test.transformed)
+
+mean(predictionLDAs$class == test.transformed$recommendationKey)
+
+#Contingency Table of Observed and Predicted Values
+tab<-table(test.transformed$recommendationKey,predictionLDAs$class)
+tab
+
+#Correct Classification Rate (CCR)
+classrate<-sum(diag(tab))/sum(tab)
+classrate
+
+# Total CCR (alternative way)
+sum(diag(prop.table(tab)))
+
+#CCR across groups (over rows)
+diag(prop.table(tab, 1))
+
+#Prediction Accuracy p1^2+p^2
+pa<-modelLDA$prior[1]^2 + modelLDA$prior[2]^2
+pa
+
+### Plot of lda results
+plot(modelLDA)
+
+```
+
+
+#### 3.5.3 Veryfy model quality
+
+```{r}
+
+n <- length(test.transformed);n
+k<- 3
+#correctly classified observations: 
+correct <- sum(diag(tab));correct
+
+Qstat <- (n-correct*k)^2/n*(k-1);Qstat
+
+alpha <- 0.01  # Significance level
+chi_critical <- qchisq(1 - alpha, df = k - 1)
+
+cat("Q statistic:", Qstat, "\n")
+cat("Critical value of Chi-squared:", chi_critical, "\n")
+
+# Hypothesis Test
+if (Qstat > chi_critical) {
+  cat("Reject the null hypothesis: The discriminant function is important.\n")
+} else {
+  cat("Fail to reject the null hypothesis: The discriminant function is not important.\n")
+}
+```
+
+
+
+
+
+
+
+

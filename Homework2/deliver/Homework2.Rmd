@@ -1,0 +1,166 @@
+---
+title: 'Homework 2: Multiple Correspondence Analysis and Clustering'
+author: 'Group 13 : Anna Monsó Rodríguez, Walter J. Troiani Vargas, Joan Acero Pousa'
+date: "2024-11-24"
+output:
+  pdf_document: default
+  html_document: default
+editor_options: 
+  chunk_output_type: console
+---
+
+# Exploratory Data Analysis
+
+## A) Import the data set correctly to R and assign type of each variable correctly 
+
+```{r}
+library(FactoMineR)
+library(factoextra)
+rm(list=ls())
+
+df <- read.csv("Wholesale customers data.csv", header = TRUE)
+str(df)
+summary(df)
+
+numeric_vars <- c("Fresh", "Milk", "Grocery", "Frozen", "Detergents_Paper", "Delicassen")
+factor_vars <- c("Channel", "Region")
+df[numeric_vars] <- lapply(df[numeric_vars], as.numeric)
+df[factor_vars] <- lapply(df[factor_vars], as.factor)
+```
+
+## B) Convert te numerical variables to factors consist of two categories "low" and "high" by cutting them from their median and save them as new variables to the data set
+
+```{r}
+numerical_to_factor <- function(data, column_name) {
+  summary_vals <- summary(data[[column_name]])
+  factor_col <- cut(data[[column_name]], 
+                    breaks = c(-Inf, summary_vals[3], Inf), 
+                    labels = c("low", "high"))
+  return(factor_col)
+}
+
+for (col in numeric_vars) {
+  new_col_name <- paste0("f.", tolower(col))
+  df[[new_col_name]] <- numerical_to_factor(df, col)
+}
+```
+
+
+# Multiple Correspondence Analysis
+
+## C) Apply MCA on the categorical variables taking Region and Chanel as supplementary variables by using MCA() function in FactoMineR package. Interpret your findings 
+
+
+```{r}
+res.mca <- MCA(df[,c(1,2,9:14)], quali.sup = c("Region","Channel"))
+summary(res.mca)
+plot(res.mca$eig[,2], type = "b", pch = 16,lwd = 2,col = "blue",xlab = "Dimensions",ylab = "Percentage of Inertia", main = "Eigenvalues")
+
+
+
+res.mca$var$coord
+res.mca$var$contrib
+res.mca$var$cos2
+res.mca$var$v.test
+
+dimdesc(res.mca)
+```
+
+
+# Hierarchical Clustering
+
+## D) Apply hierarchical clustering on MCA scores obtained from previous step by using HCPC function. How many clusters are constructed?
+
+```{r}
+res.hcpc <- HCPC(res.mca, nb.clust=-1)
+res.hcpc$desc.axes
+res.hcpc$call$t$nb.clust
+barplot(res.hcpc$call$t$inert.gain[1:10], type = "b")
+
+# Dendrogram and cluster visualisation using fviz
+fviz_dend(res.hcpc, rect = TRUE, rect_fill = TRUE)
+fviz_cluster(res.hcpc, repel = TRUE, show.clust.cent = TRUE,main = "Factor map")
+```
+
+
+## E) Apply hierarchical clustering on PCA scores considering only the numerical variables and taking Region and Channel variables as supplementary variables. How many clusters are constructed.
+
+```{r}
+
+pca_result <- PCA(df[, c(1:8)], quali.sup = c(1, 2))
+pca_result$eig 
+
+hcpc_result <- HCPC(pca_result,graph=FALSE)
+hcpc_result$call$t$nb.clust #3 clusters
+
+length(which(hcpc_result$data.clust$clust == 1))
+length(which(hcpc_result$data.clust$clust == 2))
+length(which(hcpc_result$data.clust$clust == 3))
+
+# Set the minimum number of clusters to 2
+hcpc_result <- HCPC(pca_result, min=2, nb.clust = -1)
+hcpc_result$call$t$nb.clust # 2 clusters
+
+length(which(hcpc_result$data.clust$clust == 1))
+length(which(hcpc_result$data.clust$clust == 2))
+
+fviz_dend(hcpc_result, rect = TRUE, rect_fill = TRUE)
+fviz_cluster(hcpc_result, repel = TRUE, show.clust.cent = TRUE,main = "Factor map")
+
+#Limit PCA to the first 2 dimensions
+pca_result <- PCA(df[, c(1:8)], quali.sup = c(1, 2), ncp=2)
+
+hcpc_result <- HCPC(pca_result, min=2, nb.clust = -1)
+hcpc_result$call$t$nb.clust # 4 clusters
+
+
+length(which(hcpc_result$data.clust$clust == 1))
+length(which(hcpc_result$data.clust$clust == 2))
+length(which(hcpc_result$data.clust$clust == 3))
+length(which(hcpc_result$data.clust$clust == 4))
+
+fviz_dend(hcpc_result, rect = TRUE, rect_fill = TRUE)
+
+```
+
+
+# Profiling Analysis
+
+## F) Interpret the clusters obtained from both methods
+
+**MCA cluster interpretation**
+```{r}
+fviz_cluster(res.hcpc, repel = TRUE, show.clust.cent = TRUE,main = "Factor map")
+
+length(which(res.hcpc$data.clust$clust == 2 & res.hcpc$data.clust$Channel == "Channel_1" ))
+length(which(res.hcpc$data.clust$clust == 2 & res.hcpc$data.clust$Channel == "Channel_2" ))
+length(which(res.hcpc$data.clust$Channel == "Channel_2" ))
+
+length(which(res.hcpc$data.clust$clust == 3 & res.hcpc$data.clust$Channel == "Channel_1" ))
+length(which(res.hcpc$data.clust$clust == 3 & res.hcpc$data.clust$Channel == "Channel_2" ))
+length(which(res.hcpc$data.clust$Channel == "Channel_2" ))
+
+length(which(res.hcpc$data.clust$clust == 4 & res.hcpc$data.clust$Channel == "Channel_1" ))
+
+
+res.hcpc$desc.var
+res.hcpc$desc.var$category
+res.hcpc$data.clust
+```
+
+**PCA cluster interpretation**
+```{r}
+fviz_cluster(hcpc_result, repel = TRUE, show.clust.cent = TRUE,main = "Factor map")
+
+hcpc_result$data.clust
+hcpc_result$desc.var
+hcpc_result$desc.axes
+hcpc_result$desc.ind
+hcpc_result$call
+
+```
+
+
+## G) Which of the above hierarchical clustering methods would you choose? Why? 
+
+Answered by interpreting the outputs and plots above.

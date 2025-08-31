@@ -1,0 +1,296 @@
+---
+title: "Homework 1: Principal Component Analysis (PCA) and Multidimensional Scaling (MDS)"
+author: "Group 13 : Anna Monsó Rodríguez, Walter José Troiani Vargas, Joan Acero Pousa"
+date: "2024-10-07"
+output: html_document
+---
+
+0. Import the data set “euroleague_23_24.csv”: the player statistics of four teams taken part in Final Four of Euro League 2023-2024.
+```{r}
+rm(list=ls())
+euroleague_23_24 <- read.csv2("euroleague_23_24.csv")
+
+```
+
+1. Exploratory data analysis
+# a) Discard the variable “No” from the data set.
+
+
+```{r}
+
+df <- euroleague_23_24[,-1]
+
+```
+ 
+# b) Split variable “Min” using strsplit() function. Give the name “aux” to the output. The first element of each row will show the minutes that the player played in total. (1p)
+```{r}
+
+min_column = df[,6]
+min_column_splited = strsplit(min_column,split=':',fixed=TRUE)
+aux <- sapply(min_column_splited, function(x) {
+  as.numeric(x[1]) * 60 + as.numeric(x[2]) + as.numeric(x[3]) / 60
+})
+
+df<- data.frame(Aux = aux, df[,])
+
+# No acabo de entendre si un cop afegit la columna aux s'ha de borra la columna antiga de MIN
+
+```
+
+# c) Add a numerical variable to the data set named “Min 2” which shows on average how many minutes each player played in the game.
+```{r}
+
+games_played <- df[,5]
+min2 <- aux/games_played
+df <- data.frame(df[,1], Min2 = min2, df[,-1])
+```
+
+# d) Check the structure of the data and assign correct type to each variable considering whether it is a categorical or numerical variable.
+
+```{r}
+
+str(df)
+
+df$TEAM <- as.factor(df$TEAM)
+df$PLAYER<- as.factor(df$PLAYER)
+df$POSITION <- as.factor(df$POSITION)
+df$GP <- as.numeric(df$GP)
+df$GS <- as.numeric(df$GS)
+df <- df[,-8] # I delete the column of Min with a String format
+
+str(df)
+```
+
+
+2. Application of PCA
+
+# a) Apply PCA on all the scaled numerical variables in the data set by using PCA() function in FactoMineR package. Treat the categorical variables and the variable “PIR” as suplemantary variables using arguments quali.sup and quanti.sup correctly. (3p)
+```{r}
+library(FactoMineR)
+categ_vars <- c("TEAM", "PLAYER", "POSITION")
+
+res_pca <- PCA(df, scale.unit = TRUE, graph=FALSE, 
+               quali.sup = which(names(df) %in% categ_vars),
+               quanti.sup = which(names(df) == "PIR")) 
+
+
+```
+# b) How many components should be extracted? Decide on the number of components considering eigenvalues. (3p)
+
+There are 3 main criterions to decide the number of components:
+
+1. The size of the eigenvalues associated with each components (Kaiser rule's suggests values greater than 1) 
+2. Percentage of explained variation should be at least from 2/3 (66.7%) to 4/5 (80%). 
+3. Elbow point in the Scree plot
+
+Conclusions: the 2 first components are the ones which explain the most variability, but to surpass 2/3 of variation explained we would need **3 components** and even up to 4 due to eigenvalue size > 1. 
+
+1. Looking at the size of the eigenvalues, the 4th one is the last with a value above 1
+2. From the 3th component we get a 69% of variation explained and 74% with 4 components
+3. From the scree plot we can see a clear elbow point at just the 2nd point, after that the following components don't even explain a 10% of the variation. 
+
+
+
+```{r}
+plot(res_pca)
+
+#See eigenvalues great than 1
+res_pca$eig
+which(res_pca$eig[,1] > 1)
+
+#How many components are needed for 67%?
+which(res_pca$eig[,3] > 67)[1]
+
+#How many components are needed for 80%?
+which(res_pca$eig[,3] > 80)[1]
+
+#Compute Scree plot
+plot(res_pca$eig[,2], type="o", main="Scree Plot: Percentage of Variance by Component", xlab="Number of components", ylab="Percentage of variance", col="blue", pch=16, xaxt="n", yaxt="n")
+axis(1, at=1:length(res_pca$eig[,2]), labels=1:length(res_pca$eig[,2]), las=1)
+axis(2, las=1)
+
+
+```
+
+# c) Interpret the loadings/correlations of variables at each dimension (3p).
+
+Conclusions: Given that the matrices are scaled using the correlation matrix:
+
+- *Dimension 1*: The most correlated variables of the first loading are PTS (Points Score), DR (Defensive Rebounds), GP (Games played), FD (Personal fouls drawn), FC (Personal fouls commited), STL(Steals) TR (Total rebounds), TO (Turnovers), and GS (Games started) primarily. **1st component explains the performance/activity of a given player**
+
+-*Dimension 2*: Here the main variables have negative correlation like BLK (Blocks), OR (Offensive rebounds), TR (Total rebounds), in contrast of positively correlated variables like STL(steals), AST(assists), TO (Turnovers) and X3P(Percentage of 3points). **2nd component likely explains how defensive/offensive a player is, its contrast of defensive/offensive actions**
+
+-*Dimension 3*: The most correlated positive variable is Min2 (Average player time on field) followed by 3 negative ones like FT (Percentage of free throws), X2P (Percentage of two points) and GP (Games played).**3rd dimension shows the playtime vs efficiency of a player**
+
+-*Dimension 4*: By far the most representative variable is X3P  (Percentage of 3 points) and more marginally Min2 (Average player time on the field). **4th dimension represents the three-point shooting ability of a player **, therefore sharp-shooting ability rather than playmaker.
+```{r}
+loadings <- res_pca$var$coord
+dim_id <- 4
+sort(loadings[, dim_id])
+
+loadings
+
+```
+
+
+# d) Use plot.PCA() function to show correlations between variables and the extracted dimensions. (For the variables you should use the argument choix = “var”). Plot all the extracted dimensions changing argument “axes”.(3p)
+```{r}
+
+# Dimension 1 vs others
+plot.PCA(res_pca, choix="var", axes=c(1, 2), main="Dim 1 vs Dim 2")
+plot.PCA(res_pca, choix="var", axes=c(1, 3), main="Dim 1 vs Dim 3")
+plot.PCA(res_pca, choix="var", axes=c(1, 4), main="Dim 1 vs Dim 4")
+
+# Plotting Dim 2 vs others (that haven't been plotted yet)
+plot.PCA(res_pca, choix="var", axes=c(2, 3), main="Dim 2 vs Dim 3")
+plot.PCA(res_pca, choix="var", axes=c(2, 4), main="Dim 2 vs Dim 4")
+
+# Dim 3 vs Dim 4
+plot.PCA(res_pca, choix="var", axes=c(3, 4), main="Dim 3 vs Dim 4")
+
+
+```
+
+# e) Interpret variable plots. How can each dimension be named? (5p)
+
+Looking at variable plots, we can extract several conclusions:
+
+- From looking at the plots including dimension 1 we can infer that 1st dimension is **performance**. This is due to the fact that all variables involved in this dimension are directly performance metrics of the players. 
+
+- Looking at plots of the 2nd dimension we can infer that is named: **playing style**. This is due to the fact that there are 3 positive important variables (AST, STL, X3P) and 3 negative ones (BLK, OR, TR) that almost cancel each other out in direction and value. To have a broader understanding of the second dimension one should have domain knowledge of basketball itself. Typically **outer** players like guard/wings would score higher on this dimension (They are often the ones which score the most triples and perform the most assistances) and **interior** players such as center/power-forwards which tend to be the more phsyically imposing and defensive players are the ones who perform the most number of blocks and rebounds, then they would score lower.
+
+
+- Looking at the third dimension we can see that on one side of the spectrum are the average minutes and the other one some performance metrics like GP, FT and X2P. From this inverse proportion between time and metrics we can see a kind of **efficiency** dimension.
+
+- Finally by taking a glance at dimension 4, by far the most representative variable is X3P  (Percentage of 3 points) and more marginal variables Min2 (Average player time on the field), PTS... . This 4th dimension is somewhat noisy and should be called **three_point_ability** or **sharp-shooting**. However this indicates us that this dimension is similar to variable itself with extra added noise and doesn't provide much dimensionality reduction to the analysis. 
+
+```{r}
+
+```
+
+
+# f) Show individual pilots for the extracted dimensions changing argumennt choix=“ind” in plot.PCA() function. (2p)
+```{r}
+
+?plot.PCA
+# Dimension 1 vs others
+plot.PCA(res_pca, choix="ind", axes=c(1, 2), main="Dim 1 vs Dim 2")
+plot.PCA(res_pca, choix="ind", axes=c(1, 3), main="Dim 1 vs Dim 3")
+plot.PCA(res_pca, choix="ind", axes=c(1, 4), main="Dim 1 vs Dim 4")
+
+# Plotting Dim 2 vs others (that haven't been plotted yet)
+plot.PCA(res_pca, choix="ind", axes=c(2, 3), main="Dim 2 vs Dim 3")
+plot.PCA(res_pca, choix="ind", axes=c(2, 4), main="Dim 2 vs Dim 4")
+
+# Finally, Dim 3 vs Dim 4
+plot.PCA(res_pca, choix="ind", axes=c(3, 4), main="Dim 3 vs Dim 4")
+
+
+```
+
+# g) Interpret the individual plots. (3p)
+
+Considering every single plot, we can get insights easily looking at individuals that are close and far away, considering the dimension to be studied, thus verifying or correcting our initial hypothesis about the meaning of each dimension. 
+
+1. Looking at the first plot and centering our analysis to the first dimension (**performance**) we can see for example that Mathias Lessort is really close to Konstantinos Mitoglou, looking at the most important variables we can see that they are similar: PTS: 13.9 and 11.3, GP: 41 and 38, PIR: 19.6 and 13.4 and so on... They are similar in this sense, but not at all due to the small variation in the 2nd dimension (**style**), but this already makes sense given that Mathias is a center (Thus scores lower) and Konstantinos is a Foward, both are inner players but on different roles. Comparing Mathias to a distant individual in respect to the 1st dimension like Kostas Antetokounmpo we can see that while they have a similar value for 2nd dimension (Both are center), they have completely distinct performance values: GS: 29 and 3, GP: 41 and 31, PTS: 13.6 and 2.6, PIR: 19.6 and 3.3. *This is a good proof that our initial hypotheses of dimension 1 and 2 are robust*.
+
+2. Looking again at the first plot and comparing 2 opposite players of dimension 2 (**style**), like Mathias and Facundo Campazzo, we can clearly see that Facundo is a guard and mathias a center, completely opposite roles (Guards tend to be lighter, smaller more agile and have an offensive style specialized in steals and assits, while centers are more of taller, bigger defensive players specialized on rebounds and blocks). Looking at Nigel and Alec that share almost the same value in dimension 2 and 1, we can see looking at their stats, specially PIR: 14.4 and 15.6 that they behave similarly and they share the same role: Forward. *This are even more robust claims that dimension 1 is performance and dimension 2 style*.
+
+3. Now looking at plot of 1st vs 3rd dimension, and fixating our analysis to just the 3rd dimension, we will gather 2 closely related players and the opposite too. Mathias and Panagiotis are quite far from each other and this is reflected on the average minutes min2: 43 vs 11 mins. However their X2P is really similar (62 vs 69) and and FT (60 vs 100). Mathias is a solid start choice (29 game-starts and 41 games played) while Panagiotis starts at the bench (0 starts, 30 games played). Looking at their stats we can clearly see that Panagiotis despite having a way worse PIR than Mathias and playing less time than him, has better percentages of X2P, FT and even X3P, making him more efficient in a high-level way of speaking. Now going back to the closer case, with Ismaila and Alexandros, we can see that both of them have really close number of average minutes/match (82 and 90) and they both have the same percentages of X2P, FT and a similar low numbers of games played (1 vs 2), therefore they have a similar really low efficiency. It is clear that this "efficency" measure isn't perfect, given that it should give more weight to the PTS/X3P variables, but maybe this is due to the low amount of data of the dataset.
+
+4. Taking a glance at the plot that compares the 2nd and 4th dimension, to analyze the 4th dimension we will pick again 2 close examples (Carlos and Michalis) and opposites (Alexandros and Sehmus). The first couple of observations are both guards, and have a similar low 11.8 vs 9.1 X3P score and the same PTS 1.5. However in the opposites, we can see Alexandros almost like an outlier, he has 100 X3P, while his counterpart Sehmus has 0 percentage. This shows an almost perfect relation between dimension 4 and variable X3P, but it really should be taken into account that this relationship is not perfect due to other minor variables having a small influence over this dimension, like Min2, PTS or FD.
+
+
+```{r}
+
+filter_players <- function(df, compare_players, compare_vars) {
+  compare_players <- trimws(compare_players)
+  #Trim whitespaces to avoid stupid mismatches
+  filtered_df <- df[trimws(df$PLAYER) %in% compare_players, compare_vars, drop = FALSE]
+  
+  return(filtered_df)
+}
+
+
+#Compare 2 opposite players of dimension 1 (1 vs 2 dim)
+filter_players(df, c("KOSTAS ANTETOKOUNMPO", "MATHIAS LESSORT"), names(df))
+
+#Compare 2 opposite players of dimension 2 (1 vs 2 dim)
+filter_players(df, c("ALEC PETERS", "NIGEL HAYES-DAVIS"), names(df))
+
+#Compare 2 close players of dimension 2 (1 vs 2 dim)
+filter_players(df, c("MATHIAS LESSORT", "FACUNDO CAMPAZZO"), names(df))
+
+#Compare 2 close players in dimension 1 and 2 (1 vs 2 dim)
+filter_players(df, c("MATHIAS LESSORT ", "KONSTANTINOS MITOGLOU	"), names(df))
+
+
+#Compare 2 far players in dimension 3 (1 vs 3 dim)
+filter_players(df, c("MATHIAS LESSORT ", "PANAGIOTIS KALAITZAKIS"), names(df))
+
+#Compare 2 close players in dimension 3 (1 vs 3 dim)
+filter_players(df, c("ISMAILA DIAGNE", "ALEXANDROS SAMODUROV" ), names(df))
+
+#Compare 2 close players in dimension 4 (2 vs 4 dim)
+filter_players(df, c("CARLOS ALOCEN", "MICHALIS LOUNTZIS"), names(df))
+
+#Compare 2 opposite players in dimension 4 (2 vs 4 dim)
+filter_players(df, c("SEHMUS HAZER", "ALEXANDROS SAMODUROV" ), names(df))
+
+```
+
+3. Application of MDS
+
+# a) Apply metric MDS using Euclidean distance on scaled numerical variables. (2p)
+```{r}
+
+```
+
+# b) Plot the data using the points on the first two coordinates using players names as label. (2p)
+```{r}
+
+
+
+```
+
+# c) Interpret the plot.(3p)
+```{r}
+
+
+```
+
+# d) Calculate gower distance including variable “POSITION” to the data matrix. (3p)
+```{r}
+
+
+
+```
+
+
+# e) Apply metric MDS on gower distance matrix. (2p)
+```{r}
+
+
+```
+
+# f) Plot individual plots on the first two coordinates (2p).
+```{r}
+
+
+```
+
+
+# g) Use different categorical and numerical variables as labels so as to explain clusters that are constructed. (5p)
+```{r}
+
+
+```
+
+# h) Which MDS do you think better group the individuals? Why? (3p)
+```{r}
+
+
+
+```
+
+

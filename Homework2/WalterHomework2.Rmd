@@ -1,0 +1,53 @@
+---
+title: 'Homework 2: Multiple Correspondence Analysis and Clustering'
+author: 'Group 13 : Anna Monsó Rodríguez, Walter J. Troiani Vargas, Joan Acero Pousa'
+date: "2024-11-24"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+# Exploratory Data Analysis
+
+## A) Import the data set correctly to R and assign type of each variable correctly 
+```{r}
+
+```
+
+## B) Convert te numerical variables to factors consist of two categories "low" and "high" by cutting them from their median and save them as new variables to the data set
+
+```{r}
+
+```
+
+
+
+# Multiple Correspondence Analysis
+
+## C) Apply MCA on the categorical variables taking Region and Chanel as supplementary variables by using MCA() function in FactoMineR package. Interpret your findings 
+```{r}
+
+```
+
+# Hierarchical Clustering
+
+## D) Apply hierarchical clustering on MCA scores obtained from previous step by using HCPC function. How many clusters are constructed?
+
+```{r}
+
+```
+
+
+## E) Apply hierarchical clustering on PCA scores considering only the nhumerical variables and taking Region and Channel variables as supplementary variables. How many clusters are constructed.
+
+```{r}
+
+```
+# Profiling Analysis
+
+## F) Interpret the clusters obtained from both methods
+
+
+
+## G) Whcih of the above hierarchical clustering methods would you choose? Why?
+
